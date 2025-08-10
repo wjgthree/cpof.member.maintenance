@@ -1,0 +1,598 @@
+<!--
+/*****************************************************************************************/
+// Author : William J Gay III
+// Date   : Aug 2025
+// 
+// REVISION HISTORY
+// Name             Date        Description
+// ---------------  ----------  ---------------------------------------------------------
+// Will Gay         08/09/2025  Initial development
+//
+/*****************************************************************************************/
+-->
+<html>
+  <head>
+    <base target="_top" />
+    <title>CPOF Member Maintenance</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+      body { padding: 20px; }
+      table { margin-top: 20px; }
+      th, td { white-space: nowrap; }
+      .filter-group input {
+        width: 100%;
+        margin-bottom: 8px;
+      }
+
+      a {
+        color: blue;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+
+      .title-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+      }
+
+      .cpof-logo {
+        max-height: 80px;
+      }
+
+      .page-title {
+        margin: 0;
+        font-weight: bold;
+        flex: 1;
+        text-align: left;
+      }
+
+      .qr-code-logo {
+        max-height: 80px;
+      }
+
+      /* Limit column width for all cells and headers */
+      #dataTable td,
+      #dataTable th {
+        max-width: 200px;          /* Set your desired max width */
+        overflow: hidden;          /* Hide overflow text */
+        text-overflow: ellipsis;   /* Show ... when content is clipped */
+        white-space: nowrap;       /* Keep text on one line */
+        vertical-align: middle;    /* Align text nicely in cell */
+      }
+
+      /* Modal styles */
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.5);
+      }
+
+      .modal-content {
+        background-color: #fff;
+        margin: 4% auto;
+        padding: 20px;
+        width: 650px;
+        border-radius: 5px;
+      }
+
+      .modal-content textarea {
+        width: 100%;
+        margin: 5px 5px 5px;
+        padding: 5px;
+      }
+
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 5px;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .blur {
+        filter: blur(5px);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      /* Make special label bold and larger */
+      #editModal .highlight-label {
+        font-weight: bold;
+        font-size: 2.0rem;
+      }
+
+    </style>
+  </head>
+
+  <body>
+    <!-- Title + images container -->
+    <div class="title-bar">
+      <img alt="CPOF Code" class="cpof-logo" src="https://drive.google.com/thumbnail?id=1E-r8vG25AP_-E7V_l8hUlO-oRzQ3R0lK&sz=w1000"> 
+      <h1 class="page-title">CPOF Member Maintenance</h1>
+      <img alt="QR Code" class="qr-code-logo" src="https://drive.google.com/thumbnail?id=1r6E0bBi-_z2ldW8ZkVTd3frjigff5L7F&sz=w1000"> 
+    </div>
+
+    <div id="mainContent">
+      <!-- Filter Rows -->
+      <div class="container-fluid">
+        <div class="row filter-group">
+          <div class="col-md-3"><input type="text" id="filterFirstName" class="form-control" placeholder="First Name"></div>
+          <div class="col-md-3"><input type="text" id="filterLastName" class="form-control" placeholder="Last Name"></div>
+          <div class="col-md-3"><input type="text" id="filterLast4SSN" class="form-control" placeholder="Last 4 SSN"></div>
+          <div class="col-md-3"><input type="text" id="filterStreetAddress" class="form-control" placeholder="Street Address"></div>
+        </div>
+        <div class="row filter-group">
+          <div class="col-md-3"><input type="text" id="filterCity" class="form-control" placeholder="City"></div>
+          <div class="col-md-3"><input type="text" id="filterState" class="form-control" placeholder="State"></div>
+          <div class="col-md-3"><input type="text" id="filterZipCode" class="form-control" placeholder="Zip Code"></div>
+          <div class="col-md-3"><input type="text" id="filterFacility" class="form-control" placeholder="Facility"></div>
+        </div>
+
+        <div class="d-flex align-items-center mb-3">
+          <button id="searchBtn" class="btn btn-primary me-3" onclick="loadData()">Search</button>
+          <span id="statusMessage" class="text-muted"></span>
+        </div>
+      </div>
+
+      <!-- Data Table -->
+      <div class="table-responsive">
+        <table class="table table-bordered table-striped table-sm" id="dataTable">
+          <thead>
+            <tr id="headerRow"></tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="editModal" class="modal">
+      <div class="modal-content">
+        <div id="formFields"></div>
+        <div class="modal-footer">
+          <button id="verifyBtn" class="btn btn-primary me-3" onclick="verifyMember()">Verify</button>
+          <button id="updateBtn" class="btn btn-primary me-3" onclick="saveMember()">Save</button>
+          <button id="cancelBtn" class="btn btn-primary me-3" onclick="closeModal(false)">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const SEARCH_PARM_MSG = "Please enter two or more characters to search";
+      let currentData = [];
+      let headers = [];
+      let headArr = [];
+
+      /***************************************************************/
+      // Set global header array 
+      /***************************************************************/
+      function setHeaders(response) {
+        //console.log("setHeaders: " + JSON.stringify(response));
+        const headerRow = document.getElementById("headerRow");
+        headers = response.headers;
+        headArr = response.headArray;
+
+        // Create header row
+        headers.forEach((header) => {
+          const th = document.createElement("th");
+          th.textContent = header;
+          headerRow.appendChild(th);
+        });
+      }
+
+      /***************************************************************/
+      // Enable/disable Search button
+      /***************************************************************/
+      function updateSearchButtonState() {
+        const filters = [
+          document.getElementById("filterFirstName").value,
+          document.getElementById("filterLastName").value,
+          document.getElementById("filterLast4SSN").value,
+          document.getElementById("filterStreetAddress").value,
+          document.getElementById("filterCity").value,
+          document.getElementById("filterState").value,
+          document.getElementById("filterZipCode").value,
+          document.getElementById("filterFacility").value
+        ];
+
+        //const totalLength = filters.join("").length; 
+        //const enable = filters.some(value => value.trim().length >= 2);
+        const enable = filters.join("").length >= 2;
+        if (enable) {
+          document.getElementById("searchBtn").disabled = !enable;
+          document.getElementById("statusMessage").textContent = "";
+        } else {
+          document.getElementById("searchBtn").disabled = !enable;
+          document.getElementById("statusMessage").textContent = SEARCH_PARM_MSG;
+        }
+      }
+
+      /***************************************************************/
+      // Shared code for handling failures
+      /***************************************************************/
+      function formFailures(message) {
+        //console.trace("formFailures message: " + JSON.stringify(message));
+        document.getElementById("statusMessage").textContent = message;
+        document.body.style.cursor = "default";
+      }
+
+      function modalFailures(message) {
+        //console.trace("formFailures message: " + JSON.stringify(message));
+        alert("statusMessage");
+        document.body.style.cursor = "default";
+      }
+
+      /***************************************************************/
+      // Get data from google sheet based on filters
+      /***************************************************************/
+      function getData(filters) {
+        document.body.style.cursor = "wait";
+        document.getElementById("statusMessage").textContent = "Loading data...";
+        google.script.run
+          .withSuccessHandler(renderData)
+          .withFailureHandler(() => formFailures("Failed to load data"))
+          .getFilteredData(filters);
+
+      }
+
+      /***************************************************************/
+      // Get empty data set (for displaying empty table)
+      /***************************************************************/
+      function getEmptyData() {
+        google.script.run
+          .withSuccessHandler(renderData)
+          .withFailureHandler(() => formFailures("Failed to load data"))
+          .getEmptyData();
+      }
+      
+      /***************************************************************/
+      // Get data filters and load data to table
+      /***************************************************************/
+      function loadData() {
+        document.body.style.cursor = "wait";
+        document.getElementById("tableBody").innerHTML = "";
+
+        const filters = {
+          "First Name": document.getElementById("filterFirstName").value,
+          "Last Name": document.getElementById("filterLastName").value,
+          "SSN": document.getElementById("filterLast4SSN").value,
+          "Street": document.getElementById("filterStreetAddress").value,
+          "City": document.getElementById("filterCity").value,
+          "State": document.getElementById("filterState").value,
+          "Zip": document.getElementById("filterZipCode").value,
+          "Facility": document.getElementById("filterFacility").value,
+        };
+
+        //console.log("filters: " + JSON.stringify(filters));
+        const hasFilters = Object.values(filters).some(value => value.trim() !== "") ? true : false;
+        //console.log("hasFilters: " + JSON.stringify(hasFilters));
+
+        if (hasFilters) {
+          getData(filters);
+        } else {
+          getEmptyData();
+        }
+      }
+
+      /***************************************************************/
+      // Process data returned from sheet and display in table
+      /***************************************************************/
+      function renderData(response) {
+        //console.log("renderData response: " + JSON.stringify(response))
+        if (!response || !response.data || !Array.isArray(response.data)) {
+          alert("Invalid response format.");
+          return;
+        }
+
+        document.body.style.cursor = "wait";
+        const tableBody = document.getElementById("tableBody");
+        currentData = response.data;
+
+        // Clear existing results
+        tableBody.innerHTML = "";
+
+        // Fill table body
+        currentData.forEach((row, rowIndex) => {
+          const tr = document.createElement("tr");
+          headers.forEach((header, colIndex) => {
+            const td = document.createElement("td");
+            if (colIndex === 0) {
+              const a = document.createElement("a");
+              a.href = "#";
+              a.textContent = row[header];
+              a.onclick = (e) => {
+                e.preventDefault();  // Prevents browser from jumping to top and causingn issues
+                openEditModal(row[headArr.colId.name]);
+              };
+              td.appendChild(a);
+            } else {
+              td.textContent = row[header] || '';
+            }
+            td.title = row[header] || ''; // Tooltip with full content
+            tr.appendChild(td);
+          });
+          tableBody.appendChild(tr);
+        });
+
+        if (response.filters) {
+          document.getElementById("statusMessage").textContent = `Showing ${currentData.length} results`;
+        } else {
+          document.getElementById("statusMessage").textContent = SEARCH_PARM_MSG;
+        }
+        document.body.style.cursor = "default";
+      }
+
+      /***************************************************************/
+      // Create model labels and input fields
+      /***************************************************************/
+      function emptyCol(size) {
+        // Create empty grid space
+        const gridCell = document.createElement("div");
+        gridCell.className = size;
+        return gridCell;
+      }
+
+      /***************************************************************/
+      // Create model labels and input fields
+      /***************************************************************/
+      function modalFields(props) {
+        // Label column
+        const labelCol = document.createElement("div");
+        labelCol.className = props.lSize;
+        
+        const label = document.createElement("label");
+        label.textContent = props.name;
+        label.setAttribute("for", `edit-${props.name}`);
+        label.className = "form-label mb-0";
+        labelCol.appendChild(label);
+
+        // Input column
+        const inputCol = document.createElement("div");
+        inputCol.className = props.fSize;
+
+        let inputElement;
+        inputElement = document.createElement("textarea");
+
+        if (props.name === headArr.colNotes.name) {
+          inputElement.rows = 3; // starting height
+          inputElement.style.resize = "vertical";
+        } else {
+          inputElement.rows = 1;
+          inputElement.style.resize = "none";
+        }
+
+        inputElement.className = "form-control form-control-sm";
+        inputElement.value = props.value || "";
+        inputElement.id = `edit-${props.name}`;
+        inputElement.maxLength = props.maxLength;
+        inputElement.disabled = props.disabled;
+
+        inputCol.appendChild(inputElement);
+
+        return {
+          labelCol: labelCol,
+          inputCol: inputCol
+        }
+      }
+
+      /***************************************************************/
+      // Open modal window for editing member data
+      /***************************************************************/
+      function openEditModal(id) {
+        //console.log("openEditModal id: " + JSON.stringify(id))
+        const member = currentData.find((row) => row[headArr.colId.name] == id);
+        //console.log("member: " + JSON.stringify(member))
+        if (!member) return;
+
+        const formFields = document.getElementById("formFields");
+        formFields.innerHTML = '<div class="container-fluid"></div>';
+        const container = formFields.querySelector(".container-fluid");
+
+        const fieldRow = document.createElement("div");
+        fieldRow.className = "row align-items-center mb-0 py-0";
+
+        // Modal Header
+        const headerCol = document.createElement("div");
+        headerCol.className = "col-9";
+        
+        const headerLabel = document.createElement("label");
+        headerLabel.textContent = "Edit Member";
+        headerLabel.setAttribute("for", "modal-header");
+        headerLabel.className = "form-label mb-0";
+        headerLabel.classList.add("highlight-label");
+        headerCol.appendChild(headerLabel);
+        fieldRow.appendChild(headerCol);
+
+        // Member Id
+        let indx = headArr.colId.pos;
+        let mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-1", fSize: "col-2", maxLength: 8, disabled: true });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // First Name
+        indx = headArr.colFirstName.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-10", maxLength: 60, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // Last Name
+        indx = headArr.colLastName.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-10", maxLength: 60, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // SSN
+        indx = headArr.colSSN.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-10", maxLength: 4, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // Street
+        indx = headArr.colStreet.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-10", maxLength: 60, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // City
+        indx = headArr.colCity.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-10", maxLength: 60, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // State
+        indx = headArr.colState.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-2", maxLength: 2, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        //container.appendChild(fieldRow);
+
+        fieldRow.appendChild(emptyCol("col-3"));
+
+        // Zip
+        indx = headArr.colZip.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-3", maxLength: 10, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // Facility
+        indx = headArr.colFacility.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-10", maxLength: 60, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // Donation
+        indx = headArr.colDonation.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-2", maxLength: 8, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        //container.appendChild(fieldRow);
+
+        fieldRow.appendChild(emptyCol("col-3"));
+
+        // Person
+        indx = headArr.colPerson.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-3", maxLength: 25, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        container.appendChild(fieldRow);
+
+        // Notes
+        indx = headArr.colNotes.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-10", maxLength: 250, disabled: false });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        fieldRow.classList.add("mb-2");
+        container.appendChild(fieldRow);
+
+        // Verified
+        indx = headArr.colVerified.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-3", maxLength: 50, disabled: true });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        fieldRow.classList.add("mb-2");
+        //container.appendChild(fieldRow);
+
+        fieldRow.appendChild(emptyCol("col-2"));
+
+        // Updated
+        indx = headArr.colUpdated.pos;
+        mResponse = modalFields({ name: headers[indx], value: member[headers[indx]], lSize: "col-2", fSize: "col-3", maxLength: 50, disabled: true });
+        fieldRow.appendChild(mResponse.labelCol);
+        fieldRow.appendChild(mResponse.inputCol);
+        fieldRow.classList.add("mb-2");
+        container.appendChild(fieldRow);
+
+        document.getElementById("mainContent").classList.add("blur");
+        document.getElementById("editModal").style.display = "block";
+        document.body.style.overflow = "hidden";
+      }
+
+      /***************************************************************/
+      // Close modal window
+      /***************************************************************/
+      function closeModal(refresh) {
+        document.body.style.cursor = "default";
+        document.getElementById("editModal").style.display = "none";
+        document.getElementById("mainContent").classList.remove("blur");
+        document.body.style.overflow = "auto";
+        if (refresh) loadData();
+      }
+
+      /***************************************************************/
+      // Update verification date for member
+      /***************************************************************/
+      function verifyMember() {
+        document.body.style.cursor = "wait";
+        let memberId = document.getElementById(`edit-${headArr.colId.name}`).value;
+        //console.log("verifyMember memberId: " + JSON.stringify(memberId))
+        google.script.run
+          .withSuccessHandler((result) => {if (result) closeModal(true)})
+          .withFailureHandler(() => modalFailures("Failed to update verification date."))
+          .verifyMember(memberId);
+      }
+
+      /***************************************************************/
+      // Save changes to member data from modal window
+      /***************************************************************/
+      function saveMember() {
+        document.body.style.cursor = "wait";
+        const newData = {};
+        headers.forEach((header) => {
+          const input = document.getElementById(`edit-${header}`);
+          if (input) newData[header] = input.value;
+        });
+
+        //console.log("saveMember updated: " + JSON.stringify(newData))
+
+        google.script.run
+          .withSuccessHandler((result) => {if (result) closeModal(true)})
+          .withFailureHandler(() => modalFailures("Failed to save member changes."))
+          .saveMemberData(newData);
+      }
+
+      /***************************************************************/
+      // Initialize form and add filter listeners
+      /***************************************************************/
+      window.onload = () => {
+        google.script.run.withSuccessHandler(setHeaders).getHeaders();
+
+        // Add event listener to button
+        document.getElementById("searchBtn").addEventListener("click", loadData);
+
+        // Attach input listeners to all filter fields
+        [
+          "filterFirstName", "filterLastName", "filterLast4SSN", "filterStreetAddress",
+          "filterCity", "filterState", "filterZipCode", "filterFacility"
+        ].forEach(id => {
+          const input = document.getElementById(id);
+          if (input) {
+            input.addEventListener("input", updateSearchButtonState);
+          }
+        });
+
+        // Run once at start to set initial button state
+        updateSearchButtonState();
+      };
+
+    </script>
+  </body>
+</html>
